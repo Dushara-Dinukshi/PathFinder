@@ -1,8 +1,7 @@
 import tkinter as tk
-from tkinter import simpledialog, scrolledtext, ttk
+from tkinter import scrolledtext, ttk
 from tkcalendar import DateEntry
 import json
-import os
 from modules.graph import CourseGraph
 from modules.heap import rank_courses
 from modules.sorting import sort_courses
@@ -23,6 +22,7 @@ SCROLL_HEIGHT = 20
 SCROLL_WIDTH = 70
 
 TYPE_COLORS = {'required': 'red', 'elective': 'green', 'skill': 'blue'}
+
 
 # ------------------ GUI Class ------------------ #
 class PathFinderApp:
@@ -61,17 +61,27 @@ class PathFinderApp:
         self.program_entry = tk.Entry(self.profile_frame, width=30)
         self.program_entry.grid(row=0, column=3)
 
-        tk.Label(self.profile_frame, text="Year:", bg=WINDOW_BG).grid(row=1, column=0, sticky='w')
+        tk.Label(self.profile_frame, text="Batch:", bg=WINDOW_BG).grid(row=1, column=0, sticky='w')
+        self.batch_entry = tk.Entry(self.profile_frame, width=10)
+        self.batch_entry.grid(row=1, column=1, sticky='w')
+
+        tk.Label(self.profile_frame, text="Year:", bg=WINDOW_BG).grid(row=1, column=2, sticky='w')
         self.year_entry = tk.Entry(self.profile_frame, width=10)
-        self.year_entry.grid(row=1, column=1, sticky='w')
+        self.year_entry.grid(row=1, column=3, sticky='w')
 
-        tk.Label(self.profile_frame, text="Completed Courses (IDs, comma-separated):", bg=WINDOW_BG).grid(row=2, column=0, sticky='w')
-        self.completed_entry = tk.Entry(self.profile_frame, width=50)
-        self.completed_entry.grid(row=2, column=1, columnspan=3, sticky='w')
+        # Dropdown (Listbox) for Completed Courses
+        tk.Label(self.profile_frame, text="Completed Courses:", bg=WINDOW_BG).grid(row=2, column=0, sticky='w')
+        self.completed_listbox = tk.Listbox(self.profile_frame, selectmode="multiple", width=40, height=5, exportselection=False)
+        self.completed_listbox.grid(row=2, column=1, columnspan=3, sticky='w')
+        for c in self.courses:
+            self.completed_listbox.insert(tk.END, f"{c['id']} - {c['name']}")
 
-        tk.Label(self.profile_frame, text="Currently Enrolled (IDs, comma-separated):", bg=WINDOW_BG).grid(row=3, column=0, sticky='w')
-        self.enrolled_entry = tk.Entry(self.profile_frame, width=50)
-        self.enrolled_entry.grid(row=3, column=1, columnspan=3, sticky='w')
+        # Dropdown (Listbox) for Enrolled Courses
+        tk.Label(self.profile_frame, text="Currently Enrolled:", bg=WINDOW_BG).grid(row=3, column=0, sticky='w')
+        self.enrolled_listbox = tk.Listbox(self.profile_frame, selectmode="multiple", width=40, height=5, exportselection=False)
+        self.enrolled_listbox.grid(row=3, column=1, columnspan=3, sticky='w')
+        for c in self.courses:
+            self.enrolled_listbox.insert(tk.END, f"{c['id']} - {c['name']}")
 
         tk.Label(self.profile_frame, text="Semester Credit Limit:", bg=WINDOW_BG).grid(row=4, column=0, sticky='w')
         self.credit_limit_entry = tk.Entry(self.profile_frame, width=10)
@@ -154,9 +164,16 @@ class PathFinderApp:
         if self.student:
             self.name_entry.insert(0, self.student.get("name", ""))
             self.program_entry.insert(0, self.student.get("program", ""))
+            self.batch_entry.insert(0, self.student.get("batch", ""))
             self.year_entry.insert(0, self.student.get("year", ""))
-            self.completed_entry.insert(0, ",".join(self.student.get("completed", [])))
-            self.enrolled_entry.insert(0, ",".join(self.student.get("enrolled", [])))
+
+            # Restore completed/enrolled selections
+            for i, c in enumerate(self.courses):
+                if c['id'] in self.student.get("completed", []):
+                    self.completed_listbox.selection_set(i)
+                if c['id'] in self.student.get("enrolled", []):
+                    self.enrolled_listbox.selection_set(i)
+
             self.credit_limit_entry.insert(0, self.student.get("credit_limit", ""))
             self.study_hours = load_study_hours(self.student['name'])
             self.populate_study_tree()
@@ -164,15 +181,22 @@ class PathFinderApp:
     # ------------------ Profile ------------------ #
     def save_profile(self):
         try:
+            completed_indices = self.completed_listbox.curselection()
+            enrolled_indices = self.enrolled_listbox.curselection()
+
+            completed = [self.courses[i]['id'] for i in completed_indices]
+            enrolled = [self.courses[i]['id'] for i in enrolled_indices]
+
             self.student = {
                 "name": self.name_entry.get(),
                 "program": self.program_entry.get(),
                 "batch": self.batch_entry.get(),
                 "year": int(self.year_entry.get()),
-                "completed": [c.strip() for c in self.completed_entry.get().split(",") if c.strip()],
-                "enrolled": [c.strip() for c in self.enrolled_entry.get().split(",") if c.strip()],
+                "completed": completed,
+                "enrolled": enrolled,
                 "credit_limit": int(self.credit_limit_entry.get())
             }
+
             save_student_profile(self.student)
             self.study_hours = load_study_hours(self.student['name'])
             self.populate_study_tree()
@@ -189,7 +213,7 @@ class PathFinderApp:
         remaining_credits = self.student['credit_limit'] - completed_credits
         required = [c['name'] for c in self.courses if c['type']=='required' and c['id'] not in self.student['completed']]
         info = (
-            f"Student: {self.student['name']}\nProgram: {self.student['program']}, Year: {self.student['year']}\n"
+            f"Student: {self.student['name']}\nProgram: {self.student['program']}, Year: {self.student['year']}, Batch: {self.student['batch']}\n"
             f"Completed Credits: {completed_credits}\nCredits Remaining: {remaining_credits}\nCredit Limit: {self.student['credit_limit']}\n"
             f"Pending Required Modules:\n- " + "\n- ".join(required)
         )
@@ -264,6 +288,7 @@ class PathFinderApp:
             self.tree.insert("", tk.END, values=(entry["date"], entry["hours"]))
             total += entry["hours"]
         self.total_hours_var.set(str(total))
+
 
 # ------------------ Run App ------------------ #
 if __name__ == "__main__":
