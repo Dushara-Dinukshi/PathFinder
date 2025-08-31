@@ -1,3 +1,14 @@
+
+# main.py
+from firebase_setup import db
+
+# Example: read 'users' collection
+try:
+    users_ref = db.collection("users")
+    for doc in users_ref.stream():
+        print(doc.id, doc.to_dict())
+except Exception as e:
+    print("Error accessing Firestore:", e)
 import sys
 import os
 import json

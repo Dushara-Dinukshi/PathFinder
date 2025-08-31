@@ -6,8 +6,10 @@ import os
 from modules.graph import CourseGraph
 from modules.heap import rank_courses
 from modules.sorting import sort_courses
+from firebase_setup import save_student_profile, load_student_profile, save_study_hours, load_study_hours
 
-# Colors
+
+# ------------------ Colors and Constants ------------------ #
 WINDOW_BG = "#f0f0f0"
 HEADER_BG = "#1f77b4"
 HEADER_FG = "white"
@@ -20,19 +22,14 @@ POPUP_FG = "#000000"
 SCROLL_HEIGHT = 20
 SCROLL_WIDTH = 70
 
-TYPE_COLORS = {
-    'required': 'red',
-    'elective': 'green',
-    'skill': 'blue'
-}
+TYPE_COLORS = {'required': 'red', 'elective': 'green', 'skill': 'blue'}
 
-STUDY_HOURS_FILE = "data/study_hours.json"
-
+# ------------------ GUI Class ------------------ #
 class PathFinderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("📘 PathFinder - Your Academic Assistant")
-        self.root.geometry("900x750")
+        self.root.geometry("950x800")
         self.root.configure(bg=WINDOW_BG)
 
         # Load course catalog
@@ -45,13 +42,13 @@ class PathFinderApp:
             return
 
         self.student = {}
-        self.study_hours = self.load_study_hours()
+        self.study_hours = []
 
-        # Header
+        # ------------------ Header ------------------ #
         tk.Label(root, text="PathFinder Dashboard", font=("Arial", 20, "bold"),
                  fg=HEADER_FG, bg=HEADER_BG, padx=10, pady=10).pack(pady=10, fill='x')
 
-        # Student Profile Frame
+        # ------------------ Student Profile Frame ------------------ #
         self.profile_frame = tk.LabelFrame(root, text="🧑 Student Profile", padx=10, pady=10, bg=WINDOW_BG)
         self.profile_frame.pack(fill='x', padx=20, pady=10)
 
@@ -84,7 +81,7 @@ class PathFinderApp:
         save_profile_btn.grid(row=4, column=3, sticky='e')
         self.add_hover_effect(save_profile_btn, BUTTON_BG)
 
-        # Course Actions Frame
+        # ------------------ Course Actions Frame ------------------ #
         self.action_frame = tk.LabelFrame(root, text="📚 Course Actions", padx=10, pady=10, bg=WINDOW_BG)
         self.action_frame.pack(fill='both', expand=True, padx=20, pady=10)
 
@@ -96,12 +93,12 @@ class PathFinderApp:
             ("Recommend Courses to Fill Credits", self.recommend_courses)
         ]
         for text, cmd in buttons:
-            btn = tk.Button(self.action_frame, text=text, width=40, bg=BUTTON_BG, fg=BUTTON_FG, command=cmd)
+            btn = tk.Button(self.action_frame, text=text, width=50, bg=BUTTON_BG, fg=BUTTON_FG, command=cmd)
             btn.pack(pady=5)
             self.add_hover_effect(btn, BUTTON_BG)
 
-        # Study Hours Tracker Frame
-        self.study_frame = tk.LabelFrame(root, text="📅 Study Hours Tracker", padx=10, pady=10, bg=WINDOW_BG, font=("Arial", 12, "bold"))
+        # ------------------ Study Hours Tracker Frame ------------------ #
+        self.study_frame = tk.LabelFrame(root, text="📅 Study Hours Tracker", padx=10, pady=10, bg=WINDOW_BG)
         self.study_frame.pack(fill='both', expand=True, padx=20, pady=10)
 
         tk.Label(self.study_frame, text="Select Date:", bg=WINDOW_BG).grid(row=0, column=0, sticky='w', padx=5, pady=3)
@@ -128,13 +125,13 @@ class PathFinderApp:
         self.total_hours_var = tk.StringVar(value="0")
         tk.Label(self.study_frame, textvariable=self.total_hours_var, bg=WINDOW_BG).grid(row=2, column=1, sticky='w', padx=5)
 
-        self.study_hours.sort(key=lambda x: x['date'])
-        self.populate_study_tree()  # Load existing hours
-
-        # Exit Button
+        # ------------------ Exit Button ------------------ #
         exit_btn = tk.Button(root, text="Exit", width=50, bg=EXIT_BG, fg=BUTTON_FG, command=root.quit)
         exit_btn.pack(pady=10)
         self.add_hover_effect(exit_btn, EXIT_BG)
+
+        # Load existing profile and study hours
+        self.load_existing_data()
 
     # ------------------ Helper Methods ------------------ #
     def add_hover_effect(self, btn, bg_color, hover_color="#4CAF50"):
@@ -146,13 +143,23 @@ class PathFinderApp:
         popup.title(title)
         popup.configure(bg=POPUP_BG)
         popup.geometry("650x450")
-
         st = scrolledtext.ScrolledText(popup, width=SCROLL_WIDTH, height=SCROLL_HEIGHT, bg=POPUP_BG, fg=POPUP_FG, font=("Arial", 12))
         st.pack(padx=10, pady=10)
         st.insert(tk.END, text)
         st.configure(state="disabled")
-
         tk.Button(popup, text="Close", command=popup.destroy, bg=BUTTON_BG, fg=BUTTON_FG).pack(pady=10)
+
+    def load_existing_data(self):
+        self.student = load_student_profile()
+        if self.student:
+            self.name_entry.insert(0, self.student.get("name", ""))
+            self.program_entry.insert(0, self.student.get("program", ""))
+            self.year_entry.insert(0, self.student.get("year", ""))
+            self.completed_entry.insert(0, ",".join(self.student.get("completed", [])))
+            self.enrolled_entry.insert(0, ",".join(self.student.get("enrolled", [])))
+            self.credit_limit_entry.insert(0, self.student.get("credit_limit", ""))
+            self.study_hours = load_study_hours(self.student['name'])
+            self.populate_study_tree()
 
     # ------------------ Profile ------------------ #
     def save_profile(self):
@@ -160,16 +167,20 @@ class PathFinderApp:
             self.student = {
                 "name": self.name_entry.get(),
                 "program": self.program_entry.get(),
+                "batch": self.batch_entry.get(),
                 "year": int(self.year_entry.get()),
                 "completed": [c.strip() for c in self.completed_entry.get().split(",") if c.strip()],
                 "enrolled": [c.strip() for c in self.enrolled_entry.get().split(",") if c.strip()],
                 "credit_limit": int(self.credit_limit_entry.get())
             }
+            save_student_profile(self.student)
+            self.study_hours = load_study_hours(self.student['name'])
+            self.populate_study_tree()
             self.show_popup("Profile Saved", f"Profile for {self.student['name']} saved successfully!")
         except Exception as e:
             self.show_popup("Error", f"Invalid input: {e}")
 
-    # ------------------ Dashboard ------------------ #
+    # ------------------ Courses ------------------ #
     def show_dashboard(self):
         if not self.student:
             self.show_popup("Warning", "Please save the student profile first.")
@@ -184,7 +195,6 @@ class PathFinderApp:
         )
         self.show_popup("Dashboard Summary", info)
 
-    # ------------------ Courses ------------------ #
     def show_topo(self):
         g = CourseGraph()
         for c in self.courses:
@@ -243,7 +253,7 @@ class PathFinderApp:
 
         self.study_hours.append({"date": date, "hours": hours})
         self.study_hours.sort(key=lambda x: x['date'])
-        self.save_study_hours()
+        save_study_hours(self.student['name'], self.study_hours)
         self.populate_study_tree()
 
     def populate_study_tree(self):
@@ -255,17 +265,7 @@ class PathFinderApp:
             total += entry["hours"]
         self.total_hours_var.set(str(total))
 
-    def save_study_hours(self):
-        os.makedirs("data", exist_ok=True)
-        with open(STUDY_HOURS_FILE, "w") as f:
-            json.dump(self.study_hours, f)
-
-    def load_study_hours(self):
-        if os.path.exists(STUDY_HOURS_FILE):
-            with open(STUDY_HOURS_FILE) as f:
-                return json.load(f)
-        return []
-
+# ------------------ Run App ------------------ #
 if __name__ == "__main__":
     root = tk.Tk()
     app = PathFinderApp(root)
